@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xsukax SQLite Database Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Verdana, Geneva, sans-serif; font-size: 10pt; background-color: #f6f6ef; }
+        .header-orange { background-color: #ff6600; }
+        .border-orange { border-color: #ff6600; }
+        .text-orange { color: #ff6600; }
+        .hover-orange:hover { background-color: #ff6600; color: white; }
+        .link-style { color: #000000; text-decoration: none; }
+        .link-style:hover { text-decoration: underline; }
+        input[type="text"], input[type="number"], select, textarea { font-family: Verdana, Geneva, sans-serif; font-size: 10pt; }
+        .tab-active { border-bottom: 2px solid #ff6600; color: #ff6600; }
+        .notification-container { position: fixed; top: 10px; right: 10px; z-index: 9999; max-width: 350px; }
+        .notification { background: white; border: 1px solid #828282; padding: 12px 16px; margin-bottom: 8px; border-radius: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; }
+        .notification-success { border-left: 4px solid #00cc00; }
+        .notification-error { border-left: 4px solid #cc0000; }
+        .notification-info { border-left: 4px solid #0066cc; }
+        @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9998; display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: white; border: 2px solid #ff6600; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .table-fixed { table-layout: fixed; }
+        .truncate-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    </style>
+</head>
+<body class="antialiased">
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="notification-container"></div>
+
+    <!-- Modal Container -->
+    <div id="modalContainer"></div>
+
+    <!-- Main Container -->
+    <div class="max-w-7xl mx-auto p-2 sm:p-4">
+        <!-- Header -->
+        <header class="header-orange p-2 mb-3">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg font-bold">xsukax SQLite Database Builder</span>
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="createNewDatabase()" class="px-3 py-1 bg-white text-black border border-gray-400 text-xs hover:bg-gray-100">New Database</button>
+                    <button onclick="downloadDatabase()" class="px-3 py-1 bg-white text-black border border-gray-400 text-xs hover:bg-gray-100">Download DB</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="bg-white border-b-2 border-orange mb-3">
+            <div class="flex overflow-x-auto">
+                <button onclick="switchTab('structure')" class="tab-btn tab-active px-4 py-2 text-sm whitespace-nowrap" data-tab="structure">Structure</button>
+                <button onclick="switchTab('insert')" class="tab-btn px-4 py-2 text-sm whitespace-nowrap" data-tab="insert">Insert Data</button>
+                <button onclick="switchTab('browse')" class="tab-btn px-4 py-2 text-sm whitespace-nowrap" data-tab="browse">Browse Data</button>
+                <button onclick="switchTab('sql')" class="tab-btn px-4 py-2 text-sm whitespace-nowrap" data-tab="sql">SQL Query</button>
+                <button onclick="switchTab('import')" class="tab-btn px-4 py-2 text-sm whitespace-nowrap" data-tab="import">Import/Export</button>
+            </div>
+        </nav>
+
+        <!-- Structure Tab -->
+        <section id="tab-structure" class="tab-content">
+            <article class="bg-white border border-gray-300 p-4 mb-3">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Create New Table</h2>
+                <div class="mb-3">
+                    <label class="block text-xs font-semibold mb-1">Table Name:</label>
+                    <input type="text" id="tableName" placeholder="e.g., users, products" class="w-full sm:w-1/2 px-2 py-1 border border-gray-400 text-xs">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="block text-xs font-semibold mb-2">Columns:</label>
+                    <div id="columnInputs" class="space-y-2"></div>
+                    <button onclick="addColumnInput()" class="mt-2 px-3 py-1 bg-white border border-gray-400 text-xs hover-orange">+ Add Column</button>
+                </div>
+
+                <button onclick="createTable()" class="px-4 py-1 header-orange text-white text-xs font-bold hover:bg-orange-600">Create Table</button>
+            </article>
+
+            <article class="bg-white border border-gray-300 p-4 mb-3">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Existing Tables</h2>
+                <div id="tableList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                <div id="emptyTables" class="text-center py-8 text-gray-400 text-xs">No tables created yet</div>
+            </article>
+
+            <article id="tableDetails" class="bg-white border border-gray-300 p-4 hidden">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Table: <span id="currentTableName" class="text-orange"></span></h2>
+                <div id="tableStructure" class="mb-3"></div>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="dropCurrentTable()" class="px-3 py-1 bg-red-600 text-white text-xs hover:bg-red-700">Drop Table</button>
+                    <button onclick="truncateTable()" class="px-3 py-1 bg-yellow-600 text-white text-xs hover:bg-yellow-700">Clear Data</button>
+                </div>
+            </article>
+        </section>
+
+        <!-- Insert Data Tab -->
+        <section id="tab-insert" class="tab-content hidden">
+            <article class="bg-white border border-gray-300 p-4">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Insert Data</h2>
+                <div class="mb-3">
+                    <label class="block text-xs font-semibold mb-1">Select Table:</label>
+                    <select id="insertTableSelect" onchange="loadInsertForm()" class="w-full sm:w-1/2 px-2 py-1 border border-gray-400 text-xs">
+                        <option value="">-- Select Table --</option>
+                    </select>
+                </div>
+                <div id="insertForm"></div>
+            </article>
+        </section>
+
+        <!-- Browse Data Tab -->
+        <section id="tab-browse" class="tab-content hidden">
+            <article class="bg-white border border-gray-300 p-4">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Browse Table Data</h2>
+                <div class="mb-3">
+                    <label class="block text-xs font-semibold mb-1">Select Table:</label>
+                    <select id="browseTableSelect" onchange="loadTableData()" class="w-full sm:w-1/2 px-2 py-1 border border-gray-400 text-xs">
+                        <option value="">-- Select Table --</option>
+                    </select>
+                </div>
+                <div id="tableDataContainer" class="overflow-x-auto"></div>
+            </article>
+        </section>
+
+        <!-- SQL Query Tab -->
+        <section id="tab-sql" class="tab-content hidden">
+            <article class="bg-white border border-gray-300 p-4">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Execute SQL Query</h2>
+                <div class="mb-3">
+                    <label class="block text-xs font-semibold mb-1">SQL Query:</label>
+                    <textarea id="sqlQuery" placeholder="SELECT * FROM users;" class="w-full px-2 py-1 border border-gray-400 text-xs font-mono" rows="6"></textarea>
+                </div>
+                <div class="flex gap-2 flex-wrap mb-3">
+                    <button onclick="insertSqlTemplate('SELECT * FROM ')" class="px-2 py-1 bg-white border border-gray-400 text-xs hover-orange">SELECT</button>
+                    <button onclick="insertSqlTemplate('INSERT INTO ')" class="px-2 py-1 bg-white border border-gray-400 text-xs hover-orange">INSERT</button>
+                    <button onclick="insertSqlTemplate('UPDATE ')" class="px-2 py-1 bg-white border border-gray-400 text-xs hover-orange">UPDATE</button>
+                    <button onclick="insertSqlTemplate('DELETE FROM ')" class="px-2 py-1 bg-white border border-gray-400 text-xs hover-orange">DELETE</button>
+                </div>
+                <button onclick="executeQuery()" class="px-4 py-1 header-orange text-white text-xs font-bold hover:bg-orange-600">Execute Query</button>
+                <div id="sqlResults" class="mt-4 overflow-x-auto"></div>
+            </article>
+        </section>
+
+        <!-- Import/Export Tab -->
+        <section id="tab-import" class="tab-content hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <article class="bg-white border border-gray-300 p-4">
+                    <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Import Database</h2>
+                    <label class="block text-xs mb-2">Upload SQLite File:</label>
+                    <input type="file" id="importFile" accept=".db,.sqlite,.sqlite3" onchange="importDatabase(event)" class="text-xs">
+                </article>
+
+                <article class="bg-white border border-gray-300 p-4">
+                    <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Export Database</h2>
+                    <div class="space-y-2">
+                        <button onclick="downloadDatabase()" class="w-full px-3 py-2 bg-green-600 text-white text-xs hover:bg-green-700">Download .db File</button>
+                        <button onclick="exportAsSQL()" class="w-full px-3 py-2 bg-blue-600 text-white text-xs hover:bg-blue-700">Export SQL Script</button>
+                    </div>
+                </article>
+            </div>
+
+            <article class="bg-white border border-gray-300 p-4">
+                <h2 class="text-sm font-bold mb-3 pb-2 border-b border-gray-300">Database Information</h2>
+                <div id="dbInfo" class="text-xs"></div>
+            </article>
+        </section>
+    </div>
+
+    <script>
+        let SQL;
+        let db;
+        let currentTable = null;
+
+        // Initialize sql.js
+        const initializeDatabase = async () => {
+            try {
+                SQL = await initSqlJs({
+                    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+                });
+                createNewDatabase();
+                showNotification('Database engine initialized', 'success');
+            } catch (err) {
+                showNotification(`Failed to load: ${err.message}`, 'error');
+            }
+        };
+
+        const createNewDatabase = () => {
+            if (!SQL) return;
+            db = new SQL.Database();
+            loadTableList();
+            updateDatabaseInfo();
+            showNotification('New database created', 'success');
+        };
+
+        const showNotification = (message, type = 'info') => {
+            const container = document.getElementById('notificationContainer');
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            container.appendChild(notification);
+            setTimeout(() => notification.remove(), 4000);
+        };
+
+        const showModal = (title, content, buttons = []) => {
+            const modalContainer = document.getElementById('modalContainer');
+            const buttonHtml = buttons.map(btn => 
+                `<button onclick="${btn.action}" class="px-4 py-2 ${btn.class} text-xs">${btn.text}</button>`
+            ).join('');
+            
+            modalContainer.innerHTML = `
+                <div class="modal-overlay" onclick="closeModal()">
+                    <div class="modal-content" onclick="event.stopPropagation()">
+                        <div class="p-4 header-orange text-white font-bold text-sm">${title}</div>
+                        <div class="p-4 text-xs">${content}</div>
+                        <div class="p-4 border-t border-gray-300 flex justify-end gap-2">
+                            ${buttonHtml}
+                            <button onclick="closeModal()" class="px-4 py-2 bg-gray-300 text-black text-xs">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const closeModal = () => {
+            document.getElementById('modalContainer').innerHTML = '';
+        };
+
+        const switchTab = (tabName) => {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('tab-active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+            
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('tab-active');
+            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+
+            if (tabName === 'browse' || tabName === 'insert') loadTableList();
+            if (tabName === 'import') updateDatabaseInfo();
+        };
+
+        const addColumnInput = () => {
+            const container = document.getElementById('columnInputs');
+            const isFirst = container.children.length === 0;
+            
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-1 sm:grid-cols-12 gap-2 items-end';
+            div.innerHTML = `
+                <input type="text" placeholder="Column name" value="${isFirst ? 'id' : ''}" class="col-span-3 px-2 py-1 border border-gray-400 text-xs col-name">
+                <select class="col-span-2 px-2 py-1 border border-gray-400 text-xs col-type">
+                    <option value="TEXT">TEXT</option>
+                    <option value="INTEGER" ${isFirst ? 'selected' : ''}>INTEGER</option>
+                    <option value="REAL">REAL</option>
+                    <option value="BLOB">BLOB</option>
+                </select>
+                <input type="text" placeholder="Default" class="col-span-2 px-2 py-1 border border-gray-400 text-xs col-default">
+                <label class="col-span-1 flex items-center gap-1 text-xs"><input type="checkbox" class="col-pk" ${isFirst ? 'checked' : ''}> PK</label>
+                <label class="col-span-1 flex items-center gap-1 text-xs"><input type="checkbox" class="col-notnull"> NOT NULL</label>
+                <label class="col-span-1 flex items-center gap-1 text-xs"><input type="checkbox" class="col-unique"> UNIQUE</label>
+                <label class="col-span-1 flex items-center gap-1 text-xs"><input type="checkbox" class="col-ai" ${isFirst ? 'checked' : ''}> AI</label>
+                <button onclick="this.parentElement.remove()" class="col-span-1 px-2 py-1 bg-red-600 text-white text-xs hover:bg-red-700">Remove</button>
+            `;
+            container.appendChild(div);
+        };
+
+        const createTable = () => {
+            const tableName = document.getElementById('tableName').value.trim();
+            if (!tableName) return showNotification('Enter table name', 'error');
+
+            const columnInputs = document.getElementById('columnInputs').children;
+            if (columnInputs.length === 0) return showNotification('Add at least one column', 'error');
+
+            const columns = [];
+            for (const row of columnInputs) {
+                const name = row.querySelector('.col-name').value.trim();
+                if (!name) return showNotification('Column name required', 'error');
+
+                const type = row.querySelector('.col-type').value;
+                const defaultVal = row.querySelector('.col-default').value.trim();
+                const isPK = row.querySelector('.col-pk').checked;
+                const isNotNull = row.querySelector('.col-notnull').checked;
+                const isUnique = row.querySelector('.col-unique').checked;
+                const isAI = row.querySelector('.col-ai').checked;
+
+                let colDef = `"${name}" ${type}`;
+                if (isPK) colDef += ' PRIMARY KEY';
+                if (isAI && isPK) colDef += ' AUTOINCREMENT';
+                if (isNotNull && !isPK) colDef += ' NOT NULL';
+                if (isUnique && !isPK) colDef += ' UNIQUE';
+                if (defaultVal) colDef += ` DEFAULT '${defaultVal}'`;
+
+                columns.push(colDef);
+            }
+
+            try {
+                db.run(`CREATE TABLE "${tableName}" (${columns.join(', ')})`);
+                showNotification(`Table "${tableName}" created`, 'success');
+                document.getElementById('tableName').value = '';
+                document.getElementById('columnInputs').innerHTML = '';
+                addColumnInput();
+                loadTableList();
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const loadTableList = () => {
+            try {
+                const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+                const tableListDiv = document.getElementById('tableList');
+                const emptyState = document.getElementById('emptyTables');
+                const insertSelect = document.getElementById('insertTableSelect');
+                const browseSelect = document.getElementById('browseTableSelect');
+
+                insertSelect.innerHTML = '<option value="">-- Select Table --</option>';
+                browseSelect.innerHTML = '<option value="">-- Select Table --</option>';
+
+                if (!result.length || !result[0].values.length) {
+                    tableListDiv.innerHTML = '';
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+
+                emptyState.classList.add('hidden');
+                const tables = result[0].values.map(row => row[0]);
+                
+                tableListDiv.innerHTML = tables.map(table => {
+                    const info = db.exec(`SELECT COUNT(*) FROM "${table}"`);
+                    const rowCount = info[0].values[0][0];
+                    const isActive = currentTable === table;
+                    
+                    return `
+                        <div onclick="selectTable('${table}')" class="cursor-pointer p-3 border ${isActive ? 'border-orange bg-orange-50' : 'border-gray-300 hover:border-orange'} bg-white">
+                            <div class="font-bold text-xs">${table}</div>
+                            <div class="text-xs text-gray-500">${rowCount} rows</div>
+                        </div>
+                    `;
+                }).join('');
+
+                tables.forEach(table => {
+                    insertSelect.innerHTML += `<option value="${table}">${table}</option>`;
+                    browseSelect.innerHTML += `<option value="${table}">${table}</option>`;
+                });
+
+            } catch (error) {
+                showNotification(`Error loading tables: ${error.message}`, 'error');
+            }
+        };
+
+        const selectTable = (tableName) => {
+            currentTable = tableName;
+            loadTableList();
+            
+            try {
+                const result = db.exec(`PRAGMA table_info("${tableName}")`);
+                const columns = result[0].values;
+                
+                document.getElementById('currentTableName').textContent = tableName;
+                
+                const html = columns.map(col => {
+                    const [cid, name, type, notnull, dflt, pk] = col;
+                    return `
+                        <div class="flex justify-between items-center p-2 border border-gray-300 bg-gray-50 mb-1 text-xs">
+                            <div class="flex gap-3 items-center flex-wrap">
+                                <span class="font-bold">${name}</span>
+                                <span class="text-orange font-mono">${type}</span>
+                                ${pk ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">PK</span>' : ''}
+                                ${notnull ? '<span class="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs">NOT NULL</span>' : ''}
+                                ${dflt ? `<span class="px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">Default: ${dflt}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                document.getElementById('tableStructure').innerHTML = html;
+                document.getElementById('tableDetails').classList.remove('hidden');
+                
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const dropCurrentTable = () => {
+            if (!currentTable) return;
+            
+            showModal(
+                'Confirm Drop Table',
+                `Are you sure you want to drop table "${currentTable}"? This cannot be undone.`,
+                [{
+                    text: 'Drop Table',
+                    class: 'bg-red-600 text-white hover:bg-red-700',
+                    action: 'confirmDropTable()'
+                }]
+            );
+        };
+
+        const confirmDropTable = () => {
+            try {
+                db.run(`DROP TABLE "${currentTable}"`);
+                showNotification(`Table "${currentTable}" dropped`, 'success');
+                currentTable = null;
+                document.getElementById('tableDetails').classList.add('hidden');
+                loadTableList();
+                closeModal();
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const truncateTable = () => {
+            if (!currentTable) return;
+            
+            showModal(
+                'Confirm Clear Data',
+                `Delete all data from table "${currentTable}"?`,
+                [{
+                    text: 'Clear Data',
+                    class: 'bg-yellow-600 text-white hover:bg-yellow-700',
+                    action: 'confirmTruncateTable()'
+                }]
+            );
+        };
+
+        const confirmTruncateTable = () => {
+            try {
+                db.run(`DELETE FROM "${currentTable}"`);
+                showNotification(`Table "${currentTable}" cleared`, 'success');
+                loadTableList();
+                closeModal();
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const loadInsertForm = () => {
+            const tableName = document.getElementById('insertTableSelect').value;
+            const formDiv = document.getElementById('insertForm');
+            
+            if (!tableName) {
+                formDiv.innerHTML = '';
+                return;
+            }
+
+            try {
+                const result = db.exec(`PRAGMA table_info("${tableName}")`);
+                const columns = result[0].values;
+                
+                const html = columns.map(col => {
+                    const [cid, name, type, notnull, dflt, pk] = col;
+                    if (pk && name.toLowerCase() === 'id') return '';
+                    
+                    return `
+                        <div class="mb-3">
+                            <label class="block text-xs font-semibold mb-1">${name} (${type})${notnull ? ' *' : ''}</label>
+                            <input type="text" id="insert_${name}" placeholder="Enter ${name}" class="w-full sm:w-2/3 px-2 py-1 border border-gray-400 text-xs">
+                        </div>
+                    `;
+                }).join('');
+                
+                formDiv.innerHTML = `
+                    <div class="mt-4">${html}</div>
+                    <button onclick="insertData()" class="mt-3 px-4 py-1 bg-green-600 text-white text-xs font-bold hover:bg-green-700">Insert Data</button>
+                `;
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const insertData = () => {
+            const tableName = document.getElementById('insertTableSelect').value;
+            if (!tableName) return;
+
+            try {
+                const result = db.exec(`PRAGMA table_info("${tableName}")`);
+                const columns = result[0].values;
+                
+                const values = [];
+                const columnNames = [];
+                
+                columns.forEach(col => {
+                    const [cid, name, type, notnull, dflt, pk] = col;
+                    if (pk && name.toLowerCase() === 'id') return;
+                    
+                    const input = document.getElementById(`insert_${name}`);
+                    if (input) {
+                        columnNames.push(`"${name}"`);
+                        values.push(`'${input.value.replace(/'/g, "''")}'`);
+                    }
+                });
+
+                db.run(`INSERT INTO "${tableName}" (${columnNames.join(', ')}) VALUES (${values.join(', ')})`);
+                showNotification('Data inserted successfully', 'success');
+                loadInsertForm();
+                loadTableList();
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const loadTableData = () => {
+            const tableName = document.getElementById('browseTableSelect').value;
+            const container = document.getElementById('tableDataContainer');
+            
+            if (!tableName) {
+                container.innerHTML = '';
+                return;
+            }
+
+            try {
+                const result = db.exec(`SELECT * FROM "${tableName}"`);
+                
+                if (!result.length || !result[0].values.length) {
+                    container.innerHTML = '<div class="text-center py-8 text-gray-400 text-xs">No data in this table</div>';
+                    return;
+                }
+
+                const columns = result[0].columns;
+                const rows = result[0].values;
+                
+                let html = '<table class="w-full border-collapse border border-gray-300 text-xs"><thead><tr class="bg-gray-100">';
+                columns.forEach(col => {
+                    html += `<th class="border border-gray-300 px-3 py-2 text-left">${col}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                rows.forEach(row => {
+                    html += '<tr class="hover:bg-gray-50">';
+                    row.forEach(cell => {
+                        html += `<td class="border border-gray-300 px-3 py-2">${cell !== null ? cell : '<span class="text-gray-400">NULL</span>'}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const executeQuery = () => {
+            const query = document.getElementById('sqlQuery').value.trim();
+            const resultsDiv = document.getElementById('sqlResults');
+            
+            if (!query) return showNotification('Enter SQL query', 'error');
+
+            try {
+                const result = db.exec(query);
+                
+                if (!result.length) {
+                    resultsDiv.innerHTML = '<div class="p-3 bg-green-100 border border-green-300 text-green-800 text-xs">Query executed successfully</div>';
+                    loadTableList();
+                    return;
+                }
+
+                let html = '<table class="w-full border-collapse border border-gray-300 text-xs"><thead><tr class="bg-gray-100">';
+                result[0].columns.forEach(col => {
+                    html += `<th class="border border-gray-300 px-3 py-2 text-left">${col}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                result[0].values.forEach(row => {
+                    html += '<tr class="hover:bg-gray-50">';
+                    row.forEach(cell => {
+                        html += `<td class="border border-gray-300 px-3 py-2">${cell !== null ? cell : '<span class="text-gray-400">NULL</span>'}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table>';
+                resultsDiv.innerHTML = html;
+                showNotification('Query executed', 'success');
+                loadTableList();
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="p-3 bg-red-100 border border-red-300 text-red-800 text-xs">${error.message}</div>`;
+            }
+        };
+
+        const insertSqlTemplate = (template) => {
+            document.getElementById('sqlQuery').value = template;
+            document.getElementById('sqlQuery').focus();
+        };
+
+        const downloadDatabase = () => {
+            if (!db) return showNotification('No database to download', 'error');
+
+            try {
+                const data = db.export();
+                const blob = new Blob([data], { type: 'application/x-sqlite3' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'xsukax_database.db';
+                a.click();
+                URL.revokeObjectURL(url);
+                showNotification('Database downloaded', 'success');
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        const importDatabase = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const uInt8Array = new Uint8Array(e.target.result);
+                    db = new SQL.Database(uInt8Array);
+                    showNotification('Database imported', 'success');
+                    loadTableList();
+                    updateDatabaseInfo();
+                } catch (error) {
+                    showNotification(`Import error: ${error.message}`, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        const exportAsSQL = () => {
+            if (!db) return showNotification('No database to export', 'error');
+
+            try {
+                let sql = '-- xsukax SQLite Database Export\n\n';
+                
+                const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+                if (tables.length > 0) {
+                    tables[0].values.forEach(row => {
+                        const tableName = row[0];
+                        const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='${tableName}'`);
+                        sql += `${schema[0].values[0][0]};\n\n`;
+                        
+                        const data = db.exec(`SELECT * FROM "${tableName}"`);
+                        if (data.length > 0 && data[0].values.length > 0) {
+                            data[0].values.forEach(rowData => {
+                                const values = rowData.map(v => v === null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`).join(', ');
+                                sql += `INSERT INTO "${tableName}" VALUES (${values});\n`;
+                            });
+                            sql += '\n';
+                        }
+                    });
+                }
+
+                const blob = new Blob([sql], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'xsukax_database.sql';
+                a.click();
+                URL.revokeObjectURL(url);
+                showNotification('SQL exported', 'success');
+            } catch (error) {
+                showNotification(`Export error: ${error.message}`, 'error');
+            }
+        };
+
+        const updateDatabaseInfo = () => {
+            const infoDiv = document.getElementById('dbInfo');
+            if (!db) {
+                infoDiv.innerHTML = '<p class="text-gray-400 text-xs">No database loaded</p>';
+                return;
+            }
+
+            try {
+                const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table'");
+                const tableCount = tables.length > 0 ? tables[0].values.length : 0;
+                
+                let totalRows = 0;
+                if (tables.length > 0) {
+                    tables[0].values.forEach(row => {
+                        const count = db.exec(`SELECT COUNT(*) FROM "${row[0]}"`);
+                        totalRows += count[0].values[0][0];
+                    });
+                }
+
+                const dbData = db.export();
+                const sizeKB = (dbData.length / 1024).toFixed(2);
+
+                infoDiv.innerHTML = `
+                    <table class="w-full text-xs">
+                        <tr class="border-b border-gray-200"><td class="py-2 font-semibold">Tables:</td><td class="py-2">${tableCount}</td></tr>
+                        <tr class="border-b border-gray-200"><td class="py-2 font-semibold">Total Rows:</td><td class="py-2">${totalRows}</td></tr>
+                        <tr><td class="py-2 font-semibold">Size:</td><td class="py-2">${sizeKB} KB</td></tr>
+                    </table>
+                `;
+            } catch (error) {
+                infoDiv.innerHTML = '<p class="text-red-600 text-xs">Error loading info</p>';
+            }
+        };
+
+        // Initialize
+        initializeDatabase();
+        addColumnInput();
+    </script>
+</body>
+</html>
