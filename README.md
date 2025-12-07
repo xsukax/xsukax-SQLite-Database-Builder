@@ -94,19 +94,6 @@ This application prioritizes user security and data privacy through its architec
 - Minimum 2GB RAM recommended for large databases
 - No backend server or database engine required
 
-### PHP Configuration Note
-
-While this application does not require PHP to function, if you choose to host it on a PHP-enabled web server, ensure your `php.ini` configuration allows adequate resources:
-
-```ini
-memory_limit = 256M
-max_execution_time = 300
-upload_max_filesize = 100M
-post_max_size = 100M
-```
-
-These settings ensure smooth operation when importing larger database files through a PHP backend, though the application itself operates entirely client-side and does not depend on PHP.
-
 ## Usage Guide
 
 ### Getting Started Workflow
